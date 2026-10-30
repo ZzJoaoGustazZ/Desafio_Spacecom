@@ -1,0 +1,66 @@
+O Desafio: Detecção de Encontros
+Seu objetivo é desenvolver um algoritmo capaz de processar dados de geolocalização e detectar encontros físicos entre duas entidades:
+
+Monitorados/Agressores: Indivíduos utilizando tornozeleiras eletrônicas.
+
+Vítimas: Pessoas com medidas protetivas utilizando rastreadores portáteis.
+
+Tipos de encontros a serem detectados:
+
+Encontros genéricos: Encontro entre quaisquer dois monitorados.
+
+Encontros de facções: Encontro entre dois monitorados que pertencem à mesma facção.
+
+Encontros de medidas protetivas: Encontro entre um agressor e sua respectiva vítima.
+
+Regras de Negócio e Requisitos Técnicos
+Tecnologia obrigatória: JavaScript ou TypeScript (utilizando Node.js ou frameworks similares).
+
+Utilização de IA: A utilização de ferramentas de inteligência artificial É PERMITIDO, porém será avaliada principalmente a forma de utilização das ferramentas bem como a defesa da solução na resposta do desafio e em etapas futuras do processo. O mais importante é saber o que está construindo!
+
+Distância limite: O raio para configurar um encontro é de 20 metros (distância menor que 20 metros).
+
+Cálculo de distância: Utilizar a Fórmula de Haversine, considerando o raio da Terra como 6.371.000 metros.
+
+Análise de Timestamps: Os posicionamentos são gerados a cada 5 segundos (ex: 2026-10-01 00:00:00, 2026-10-01 00:00:05). Você deve comparar apenas os posicionamentos que possuem o exato mesmo timestamp.
+
+Unicidade: Cada encontro deve ser registrado apenas uma vez por par de envolvidos naquele timestamp (a ordem dos IDs das pessoas monitoradas no array do resultado não impacta a solução).
+
+Datsets de Input
+Você encontrará abaixo os links de 7 datasets em formato .txt.
+
+Os 2 primeiros contêm as respostas corretas para você validar sua lógica. Os 5 restantes são os datasets oficiais que usaremos para avaliar e pontuar sua solução. Os datasets de testes contém os respectivos arquivos JSON de resposta.
+
+Formato do Input: Os arquivos de entrada utilizam separação por ponto e vírgula (;), no estilo CSV, com o seguinte cabeçalho e estrutura de campos:
+
+idMonitorado;faccaoMonitorado;timestamp;latitude;longitude;medidaProtetiva;idsRestricaoMedida
+
+idMonitorado: Define o id da pessoa monitorada, podendo ser usuário de tornozeleira ou vítima de medida protetiva.
+
+faccaoMonitorado: Define o id da facção do monitorado (pode ser vazio; apenas usuários de tornozeleira possuem esse campo preenchido).
+
+timestamp: Data do posicionamento no formato YYYY-MM-DD HH:MM:SS.
+
+latitude: Latitude do posicionamento no formato float com 5 casas decimais.
+
+longitude: Longitude do posicionamento no formato float com 5 casas decimais.
+
+medidaProtetiva: Booleano que indica se a pessoa monitorada tem medida protetiva ou não.
+
+idsRestricaoMedida: Array de Ids dos monitorados agressores, caso a pessoa possua medida protetiva, no formato "1,2,3,...n".
+
+Formato do Output
+Para cada dataset processado, sua aplicação deve gerar um arquivo JSON contendo um array com os encontros detectados, seguindo estritamente a estrutura abaixo:
+
+JSON
+  [{
+    "tipo": "faccao", 
+    "monitoradosEncontro": [40, 44],
+    "timestamp": "2024-01-01 00:01:50",
+    "posicoes": { 
+      "40": { "lat": -10.07996, "lon": -37.08384 }, 
+      "44": { "lat": -10.07987, "lon": -37.08389 } 
+    },
+    "distanciaMetros": 11.406788673336607
+  }]
+(Valores aceitos para o campo "tipo": generico, faccao, protetiva)
