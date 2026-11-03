@@ -37,10 +37,13 @@ Requisito: **Node.js 16 ou superior**. Não há dependências, então não é pr
    ```
    npm run verificar
    ```
-4. (Opcional) Ajuste a velocidade à sua máquina:
+4. **(Opcional, mas recomendado) Ajuste a velocidade à sua máquina:**
    ```
    npm run calibrar
    ```
+   > **Por que vale a pena.** O resultado é sempre o mesmo; o que muda é o **tempo**. O programa divide cada arquivo entre várias threads, que trabalham ao mesmo tempo (seção 4.4), e o número ideal de threads **depende do processador**: num desktop, uma por núcleo físico; num notebook de baixo consumo, menos que isso, porque o chip reduz a frequência quando todos os núcleos trabalham juntos. O padrão do código acerta na maioria dos casos, mas a calibração **mede em vez de adivinhar**: roda o programa várias vezes com cada configuração, grava a mais rápida em `calibracao.json`, e o `npm start` passa a usá-la.
+   >
+   > **Exemplo real:** num notebook Ryzen 7 5700U, a calibração reduziu o tempo total de **2,9 s para 1,75 s (40% mais rápido)**. Leva alguns minutos e só precisa ser feita uma vez por máquina.
 
 ---
 
@@ -135,14 +138,55 @@ Comparar todos os pares de um timestamp custa O(m²). O programa evita isso com 
 
 > **d ≥ R · |Δφ|**: a distância nunca é menor que a diferença de latitude convertida em metros.
 
-Logo, dois pontos a menos de 20 m têm latitudes a menos de 20 m uma da outra. O mapa é então dividido em **faixas horizontais de 40 m**:
-- cada ponto é colocado na sua faixa;
-- antes de entrar, ele é comparado **só** com quem já está na **mesma faixa** e na **faixa vizinha do lado da metade em que ele está**. Um vizinho a menos de 20 m está no máximo a meia faixa de distância, então só existem essas duas possibilidades;
-- com as pessoas espalhadas pelo Brasil, quase nunca duas dividem uma faixa: o custo cai de O(m²) para **O(m)**, sem ordenar nada.
+Logo, dois pontos a menos de 20 m têm latitudes a menos de 20 m uma da outra. O mapa é então dividido em **faixas horizontais de 40 m**, como as linhas de um caderno:
 
-**Por que uma tabela hash.** O nº da faixa é a latitude dividida pela altura da faixa (ex.: −33,24° → faixa −92 333), e só umas poucas faixas têm alguém dentro. Um array com uma posição por faixa teria milhões de posições quase todas vazias. A tabela hash guarda só as faixas ocupadas: a posição de uma faixa é o nº da faixa "cortado" para o tamanho da tabela, e cada posição guarda uma lista dos pontos daquela faixa. A tabela é reaproveitada em todos os timestamps: um "carimbo" com o nº do grupo diz se a posição é do grupo atual, então não é preciso apagá-la a cada timestamp. Todo par encontrado nas faixas é decidido pela **Haversine exata**.
+```
+                     ┌───────────────────────────────────────────┐ 1.040 m
+                     │                          • B  (1.025 m)   │
+  faixa 25           │ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ │ 1.020 m  ← meio da faixa
+  (1.000 a 1.040 m)  │       • A  (1.010 m)                      │
+                     ├───────────────────────────────────────────┤ 1.000 m
+  faixa 24           │                  • C  (995 m)             │
+  (960 a 1.000 m)    └───────────────────────────────────────────┘   960 m
+                        oeste ←────────── longitude ──────────→ leste
+```
+*(Para simplificar, a latitude está em metros a partir do equador; no código ela está em graus, e cada faixa tem cerca de 0,00036°.)*
+
+- **A** está na **metade de baixo** da faixa 25. Um vizinho a menos de 20 m **ao norte** chega no máximo a 1.030 m, ainda na faixa 25; **ao sul**, chega até 990 m, na faixa 24. Então A só precisa olhar **as faixas 25 e 24**: as outras não podem ter ninguém a menos de 20 m dela.
+- **B** está na **metade de cima**, então olharia as faixas 25 e 26.
+- Cada pessoa é comparada **só** com quem já foi colocado nessas 2 faixas, e depois entra na sua. Assim cada par é testado uma única vez.
+- O Brasil tem uns 4.300 km de norte a sul, ou seja, **mais de 100 mil faixas** para no máximo 120 pessoas. Quase sempre cada pessoa está sozinha na sua faixa: em vez de 7.140 Haversines por timestamp (todos os pares de 120 pessoas), são cerca de **240 consultas rápidas**. O custo cai de O(m²) para **O(m)**, sem ordenar nada.
+
+A faixa olha **só a latitude**, então duas pessoas na mesma faixa podem estar a 1.000 km uma da outra no sentido leste-oeste. A faixa só decide **quem vale a pena testar**; quem decide se é encontro é sempre a **Haversine exata**.
+
+**Por que só a latitude, e não uma grade de latitude × longitude.** Um grau de latitude vale ~111 km em qualquer lugar, então "20 m" é sempre o mesmo tamanho em graus. Um grau de longitude encolhe longe do equador (111 km em Macapá, 96 km em Porto Alegre), então uma grade precisaria de células de largura variável. E como quase ninguém divide faixa, a longitude não teria o que separar: cada pessoa passaria a consultar 4 células em vez de 2 faixas, dobrando o trabalho para economizar uma conta rara.
+
+**A tabela hash: onde as faixas ficam guardadas.** O nº da faixa é grande (ex.: −33,24° → faixa −92 333), e só umas poucas faixas têm alguém. Um array com uma posição por faixa possível teria milhões de posições vazias. A tabela hash é um **armário com poucas gavetas** (pelo menos 2 por pessoa; 256 para 120 pessoas):
+
+```
+  exemplo com 8 gavetas:  gaveta = faixa & 7   (o resto da divisão do nº da faixa por 8)
+
+  gaveta 0 │ P2 (faixa 7000)
+  gaveta 1 │ P3 (faixa 5097) ─► P1 (faixa 3001) ─► P0 (faixa 5097)
+  gaveta 2 │ (vazia)
+  ...
+```
+- Faixas diferentes podem cair na mesma gaveta (5097 e 3001 caem na gaveta 1), por isso o código confere a faixa de cada pessoa da gaveta.
+- Quando **P3** chega, ele percorre a gaveta 1: **P1** é de outra faixa e é pulado; **P0** é da mesma faixa, e só esse par vai para a Haversine. De 6 pares possíveis, 1 conta.
+- A lista de cada gaveta é uma corrente feita com dois arrays (`cabeca[gaveta]` = último a entrar, `proximo[pessoa]` = quem entrou antes dele). Os arrays são **reaproveitados** em todos os timestamps, sem criar objetos novos.
+- **O carimbo:** cada gaveta guarda o nº do timestamp que a usou. No timestamp seguinte, as gavetas com carimbo antigo contam como vazias automaticamente, então não é preciso esvaziar o armário centenas de milhares de vezes.
 
 ### 4.4 Paralelismo adaptado ao processador
+Junto com o modo de fluxo, o paralelismo foi **a ideia que mais reduziu o tempo**. Ler e interpretar 1 GB de texto é o trabalho pesado do programa, e ele pode ser dividido: cada parte do arquivo é independente das outras, então várias threads podem trabalhar ao mesmo tempo, cada uma num núcleo do processador. Mas o **número** de threads importa muito: threads demais disputam a memória e atrapalham umas às outras.
+
+| Máquina (soma dos 7 datasets) | Threads | Tempo |
+|---|---|---|
+| Desktop Ryzen 7 5700X (8 núcleos / 16 threads) | 16 (todas as threads lógicas) | ≈ 930 ms |
+| | **8 (1 por núcleo físico)** | **≈ 723 ms** |
+| Notebook Ryzen 7 5700U (8 núcleos / 16 threads) | 8 (1 por núcleo físico) | 2,9 s |
+| | **4 (metade, perfil série U)** | **1,75 s** |
+
+Como funciona:
 - O arquivo é dividido em trechos, **um por thread**, e cada thread lê e processa o seu trecho ao mesmo tempo que as outras.
 - Cada corte é posicionado **exatamente numa troca de timestamp**: antes de dividir, o programa lê alguns KB em volta do ponto de corte e avança até a primeira linha com um timestamp novo. Assim nenhum grupo fica dividido entre duas threads, e cada thread já devolve os encontros prontos.
 - **Quantas threads:** `mín(tamanho do arquivo / 4 MB, núcleos físicos)`. Arquivos pequenos usam 1 thread, porque coordenar threads custaria mais do que dividir economizaria. Arquivos grandes usam uma thread por **núcleo físico**.
@@ -194,7 +238,9 @@ Resultado nos 7 datasets: **todas as saídas conferem com a força bruta e com o
 
 ---
 
-## 6. Calibração (opcional)
+## 6. Calibração (opcional, mas recomendada)
+
+**Benefício:** o mesmo resultado, no menor tempo possível **na máquina de quem roda**. Como a seção 4.4 mostra, o número certo de threads pode mudar o tempo em até 40%, e ele depende do processador, da memória e até do limite de energia do notebook. Em vez de confiar só no padrão, a calibração mede.
 
 Três parâmetros mudam só a **velocidade**, nunca o resultado. Os padrões são a melhor configuração medida nas máquinas do autor: num desktop Ryzen 7 5700X (3 calibrações consistentes) e num notebook Ryzen 7 5700U. A calibração faz diferença: no notebook, o padrão de desktop levava 2,9 s e a configuração calibrada, 1,75 s.
 
@@ -231,21 +277,25 @@ output/             respostas geradas
 
 ---
 
-## 8. Ideias de melhoria (não implementadas)
+## 8. Melhorias implementadas, testadas e retiradas para simplificar
 
-A solução foi feita sob medida para o formato destes datasets: pessoas **espalhadas pelo Brasil**, arquivos **em ordem de timestamp** e **poucos encontros**. Nesse cenário, o código acima é o mais simples que encontrei sem perder velocidade. Em dados com outro formato, ele continua dando a resposta **certa**, mas algumas situações ficariam lentas. Estas são as melhorias para esses casos. Todas foram testadas numa versão anterior e dão **exatamente o mesmo resultado**; ficaram de fora porque, nestes datasets, não mudam o tempo e deixam o código bem maior.
+> **Importante:** tudo o que está nesta seção **foi implementado e testado**. Numa versão anterior do projeto, com todas essas otimizações, a saída era **idêntica byte a byte** à atual nos 7 datasets e em testes extras feitos para forçar esses casos (pessoas concentradas numa área pequena, arquivo fora de ordem, milhares de encontros), tudo conferido pela força bruta do `verificar.js`. Elas foram **retiradas de propósito**: nestes datasets não mudavam o tempo e deixavam o código com o dobro do tamanho (cerca de 1.900 linhas contra 960). Preferi um algoritmo mais simples de ler, explicar e manter, e deixar aqui o caminho para quando os dados pedirem.
 
-### 8.1 Muita gente concentrada numa cidade
+A solução atual foi feita sob medida para estes datasets: pessoas **espalhadas pelo Brasil**, arquivos **em ordem de timestamp** e **poucos encontros**. Em dados de outro formato ela continua dando a resposta **certa**; só algumas situações ficariam mais lentas. Estas são as melhorias para elas.
+
+### 8.1 Filtro barato antes da Haversine
+A Haversine é a conta mais cara do programa: 2 senos, 2 cossenos, uma raiz quadrada e um arco-seno, funções que custam dezenas de vezes mais que uma soma ou multiplicação. O **filtro barato** decide, só com **somas e multiplicações**, se vale a pena calcular a Haversine:
+```
+Δlat² + (Δlon × cos_min)²  ≥  (20 m em graus)²     →  longe demais: descarta sem calcular a Haversine
+```
+- **Por que ele nunca erra:** `cos_min` é o cosseno da latitude mais longe do equador no grupo, o menor de todos. Multiplicar a diferença de longitude por ele **encurta** a distância, então a estimativa fica sempre **abaixo** da real. Se até a estimativa "por baixo" dá 20 m ou mais, a distância real com certeza também dá. Uma folga de 1% cobre o arredondamento.
+- **Ele só elimina, nunca aprova:** todo par que passa pelo filtro ainda é decidido pela Haversine exata.
+- **Quando faz diferença:** quando muitos pares caem na mesma faixa (caso 8.2), quase todos estão longe na longitude, e o filtro elimina a grande maioria a um custo mínimo. Nestes datasets, com ~0,1 par candidato por timestamp, não há o que economizar; por isso saiu.
+
+### 8.2 Muita gente concentrada numa cidade
 A hash de faixas é O(m) porque quase ninguém divide faixa. Se centenas de pessoas estivessem na mesma cidade, todas cairiam nas mesmas poucas faixas e a busca viraria quase "todos contra todos". A ideia é escolher a estratégia por timestamp:
 - **poucos pontos concentrados (até ~32):** ordenar por latitude (insertion sort, ótimo para listas pequenas) e, para cada ponto, comparar só com os seguintes até a latitude passar de 20 m;
-- **muitos pontos concentrados:** ordenar por faixas de 20 m (counting sort, O(m)) e, dentro de cada faixa e da faixa de cima, ordenar por longitude e comparar só quem está numa **janela de longitude** de 20 m (`Δlon ≤ 20 m / cos(lat)`).
-
-### 8.2 Filtro barato antes da Haversine
-A Haversine usa 2 senos, 2 cossenos, raiz e arco-seno: é a conta mais cara do programa. Quando muitos pares caem na mesma faixa (caso 8.1), vale descartar antes os pares claramente distantes com uma conta plana, só com somas e multiplicações:
-```
-Δlat² + (Δlon · cos(lat mais longe do equador))²  ≥  (20 m em graus)²   →  descarta
-```
-Usar o **menor cosseno** do grupo faz a conta **subestimar** a distância, então ela nunca descarta um par que possa estar a menos de 20 m; com 1% de folga, nem o arredondamento atrapalha. Quem passa pelo filtro continua sendo decidido pela Haversine exata. Nestes datasets quase nenhum par chega a ser testado, então o filtro não economiza nada.
+- **muitos pontos concentrados:** ordenar por faixas de 20 m (counting sort, O(m)) e, dentro de cada faixa e da faixa de cima, ordenar por longitude e comparar só quem está numa **janela de longitude** de 20 m (`Δlon ≤ 20 m / cos(lat)`), com o filtro barato antes da Haversine.
 
 ### 8.3 Arquivo fora de ordem, com várias threads
 Hoje o modo geral roda numa thread só. A versão paralela: cada thread lê um trecho e conta os pontos por timestamp; a thread principal soma as contagens e calcula onde cada timestamp começa num array **compartilhado** (`SharedArrayBuffer`, counting sort em O(n)); cada thread copia os seus pontos para lá, e a detecção é dividida em faixas de timestamps entre as threads.
