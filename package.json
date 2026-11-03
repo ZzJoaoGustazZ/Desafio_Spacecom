@@ -1,0 +1,15 @@
+{
+  "name": "deteccao-encontros",
+  "version": "1.0.0",
+  "description": "Detecção de encontros entre monitorados (tornozeleira) e vítimas com medida protetiva",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "calibrar": "node calibrar.js",
+    "verificar": "node verificar.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}

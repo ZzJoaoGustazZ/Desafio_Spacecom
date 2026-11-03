@@ -1,0 +1,10 @@
+# Datasets e gabaritos: grandes demais para o GitHub (limite de 100 MB por arquivo).
+# Cada um coloca os seus em data/. A pasta continua no repositório pelo .gitkeep.
+data/*
+!data/.gitkeep
+
+# Configuração medida em cada máquina pelo npm run calibrar
+calibracao.json
+
+# Dependências (o projeto não usa, mas é o padrão)
+node_modules/
