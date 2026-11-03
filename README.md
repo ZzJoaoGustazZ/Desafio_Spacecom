@@ -19,6 +19,38 @@ Algoritmo em **Node.js puro, sem dependências**, que processa dados de geolocal
 
 ---
 
+## Por que esta é a melhor abordagem
+
+O desafio tem dois critérios, nesta ordem: **acertar os encontros** (Score = soma_ec − soma_ei) e, no desempate, **rodar mais rápido**. A solução foi construída para não abrir mão do primeiro em troca do segundo.
+
+**1. Exatidão em primeiro lugar.**
+- A distância é a **Haversine do enunciado**, escrita na forma literal (R = 6.371.000 m), com o critério estrito `d < 20`. Ela reproduz o gabarito oficial **até o último dígito**.
+- **Nada é arredondado:** as coordenadas são lidas com exatamente o mesmo valor que o `parseFloat` (seção 4.1).
+- **Nenhum par é descartado por aproximação:** os atalhos de velocidade se apoiam numa propriedade matemática da Haversine (`d ≥ R·|Δφ|`, seção 4.3), não em estimativas.
+- **Comprovado:** um verificador independente compara **todos os pares** de cada timestamp por força bruta e confere a saída encontro por encontro. Resultado: 0 faltando, 0 a mais, 0 tipos errados, e a saída é idêntica byte a byte aos gabaritos oficiais.
+
+**2. Velocidade sem perder exatidão.** Cada etapa elimina trabalho desnecessário:
+- **busca de pares em O(m)** com a tabela hash de faixas, em vez de O(m²): com 120 pessoas, ~240 consultas por timestamp em vez de 7.140 Haversines;
+- **leitura em fluxo, direto nos bytes:** cada timestamp é processado e descartado assim que termina, então a memória usada é a de um bloco de 8 MB, e não a de 1 GB;
+- **paralelismo ajustado ao processador**, uma thread por núcleo físico. Foi um conceito que **aprendi na faculdade** e uma das decisões que **mais deram certo** no projeto (veja a seção 4.4).
+
+O resultado é **1,1 GB processado em ≈ 700 ms**, cerca de 1,6 GB por segundo.
+
+**3. Simples e sem dependências.** É Node.js puro, sem bibliotecas: basta ter o Node e rodar `npm start`. São cerca de 960 linhas, e cada otimização existe por um motivo concreto nos dados. As que não faziam diferença nestes datasets foram implementadas, testadas e **retiradas** para manter o código fácil de ler e explicar (seção 8).
+
+**4. Por que não outras abordagens.**
+- **Comparar todos os pares (força bruta):** correta, mas O(m²). Ela é usada só no `verificar.js`, como referência.
+- **Ler o arquivo inteiro como texto:** quebra em arquivos acima de ~512 MB, que é o limite de uma string no Node.js.
+- **Árvores espaciais** (k-d tree, quadtree, R-tree) ou bibliotecas de geolocalização: com 10 a 120 pessoas por timestamp, montar uma árvore a cada timestamp custa mais do que a tabela de faixas, que é O(m) e não precisa ordenar nada.
+- **Banco de dados com índice espacial:** só a carga de 1 GB num banco já levaria mais tempo do que o programa inteiro.
+
+**5. Adaptável.** O mesmo código se ajusta à máquina de quem avalia:
+- detecta os núcleos físicos e o perfil do processador;
+- o `npm run calibrar` mede a melhor configuração na própria máquina;
+- se um arquivo vier fora de ordem, o programa percebe e troca de modo, mantendo o resultado certo.
+
+---
+
 ## 1. Como rodar
 
 Requisito: **Node.js 16 ou superior**. Não há dependências, então não é preciso rodar `npm install`.
@@ -177,6 +209,9 @@ A faixa olha **só a latitude**, então duas pessoas na mesma faixa podem estar 
 - **O carimbo:** cada gaveta guarda o nº do timestamp que a usou. No timestamp seguinte, as gavetas com carimbo antigo contam como vazias automaticamente, então não é preciso esvaziar o armário centenas de milhares de vezes.
 
 ### 4.4 Paralelismo adaptado ao processador
+
+> **Um conceito da faculdade que fez a diferença.** O paralelismo foi um conteúdo que aprendi na faculdade: dividir um problema em partes **independentes** e processá-las **ao mesmo tempo**, em núcleos diferentes do processador. Também aprendi lá que mais threads nem sempre é melhor: quando o gargalo é a **memória**, threads demais competem pelo mesmo recurso e o tempo piora, e as duas threads de um mesmo núcleo físico (SMT/Hyper-Threading) dividem o mesmo hardware. Aplicar esses dois conceitos neste desafio **deu muito certo**: as medições abaixo confirmaram exatamente o que a teoria previa.
+
 Junto com o modo de fluxo, o paralelismo foi **a ideia que mais reduziu o tempo**. Ler e interpretar 1 GB de texto é o trabalho pesado do programa, e ele pode ser dividido: cada parte do arquivo é independente das outras, então várias threads podem trabalhar ao mesmo tempo, cada uma num núcleo do processador. Mas o **número** de threads importa muito: threads demais disputam a memória e atrapalham umas às outras.
 
 | Máquina (soma dos 7 datasets) | Threads | Tempo |
